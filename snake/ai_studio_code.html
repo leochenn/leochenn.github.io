@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇 - 头像版 (Snake Avatar Edition)</title>
+    <style>
+        /* FR-2.1.3: 页面背景 -不易察觉的噪点纹理 */
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            background-color: #1a242f; /* Fallback color */
+            font-family: 'Courier New', monospace;
+        }
+
+        /* [NEW] 全屏背景Canvas */
+        #background-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1; /* 确保在最底层 */
+        }
+
+        /* [MODIFIED] 主容器现在只包含游戏机，并提高层级 */
+        #main-wrapper {
+            position: relative; /* 确保 z-index 生效 */
+            z-index: 10;      /* 确保在背景之上 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transform-origin: center center;
+            transition: transform 0.2s ease-out;
+        }
+        
+        /* FR-2.1.1: 游戏主视图 - 固定尺寸掌机 */
+        #game-container {
+            position: relative;
+            width: 1000px;
+            height: 900px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        #game-container > svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* FR-2.2.1: Canvas 嵌入 (使用百分比定位) */
+        #game-canvas {
+            position: absolute;
+            top: 7.22%; /* 65px / 900px */
+            left: 10%; /* 100px / 1000px */
+            width: 80%; /* 800px / 1000px */
+            height: 71.11%; /* 640px / 900px */
+            background-color: transparent; /* 背景由canvas自己绘制 */
+            box-shadow: inset 0 0 15px rgba(173, 216, 230, 0.8);
+            border-radius: 10px;
+            z-index: 2;
+        }
+        
+        /* FR-2.2.4: CRT 扫描线效果 (使用百分比定位) */
+        #scanline-overlay {
+            position: absolute;
+            top: 7.22%;
+            left: 10%;
+            width: 80%;
+            height: 71.11%;
+            pointer-events: none;
+            z-index: 3;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        /* FR-2.5.3: 游戏结束面板 */
+        #game-over-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8);
+            opacity: 0;
+            transition: all 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        #game-over-panel.visible {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* [MODIFIED] 设置模态框样式 - 全面美化 */
+        #settings-modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5); /* 加深背景 */
+            z-index: 20;
+            display: none; /* 默认隐藏 */
+            justify-content: center;
+            align-items: center;
+            /* 平滑过渡 */
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        #settings-modal.visible {
+            display: flex;
+            opacity: 1;
+        }
+        .modal-content {
+            /* 毛玻璃效果 */
+            background: linear-gradient(180deg, rgba(120, 80, 220, 0.7), rgba(80, 50, 180, 0.7));
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px); /* For Safari */
+            
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .modal-content h2 {
+            margin: 0 0 15px 0;
+            color: #ecf0f1;
+            text-align: center;
+            font-size: 32px;
+            font-weight: bold;
+        }
+        .modal-content button {
+            border: none;
+            border-radius: 12px;
+            padding: 15px 20px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #fff;
+            background: linear-gradient(180deg, #F97777, #E95C5C);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            min-width: 220px; /* 统一宽度 */
+        }
+         .modal-content button:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .modal-content button.active {
+            /* 选中状态使用更深的渐变 */
+            background: linear-gradient(180deg, #d64545, #b93434);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    
+    <canvas id="background-canvas"></canvas>
+
+    <div id="main-wrapper">
+        <div id="game-container">
+            <!-- 掌机 SVG 将被注入这里 -->
+            <canvas id="game-canvas"></canvas>
+            <div id="scanline-overlay">
+                 <!-- 扫描线 SVG 将被注入这里 -->
+            </div>
+            <!-- 游戏结束面板 SVG 将被注入这里 -->
+
+            <!-- [NEW] Settings Modal HTML -->
+            <div id="settings-modal">
+                <div class="modal-content">
+                    <h2>选择难度</h2>
+                    <!-- 难度按钮将由 JS 注入 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- 游戏常量与配置 (根据 PRD) ---
+        const CONFIG = {
+            // FR-2.1.1 & FR-2.2.1: 尺寸
+            GAME_WIDTH: 1000,
+            GAME_HEIGHT: 900,
+            CANVAS_WIDTH: 800,
+            CANVAS_HEIGHT: 640,
+            
+            // 游戏网格
+            GRID_SIZE: 40,
+            
+            // NFR-1.1: 难度速度
+            DIFFICULTY: {
+                '入门': 400,
+                '简单': 200,
+                '普通': 120,
+                '困难': 80,
+            },
+
+            // NFR-2.1: 数据持久化键名
+            HIGH_SCORE_KEY: 'snakeHighScore',
+        };
+
+        // --- 资产管理 (根据 PRD 4.2 & 4.3) ---
+        const ASSETS = {
+            // FR-4.2.1: 蛇头图片
+            snakeHeadImageSrc: 'pic/430104201808180211.jpg',
+            // FR-4.2.2: 食物头像图片
+            foodImageSrcs: [
+                'pic/210104201806253711.jpg', 'pic/421023201803107114.jpg', 'pic/430103201802020173.jpg',
+                'pic/430104201704090094.jpg', 'pic/430104201708220394.jpg', 'pic/430104201709180216.jpg',
+                'pic/430104201710100199.jpg', 'pic/430104201710250517.jpg', 'pic/430104201710270091.jpg',
+                'pic/430104201711030241.jpg', 'pic/430104201711030401.jpg', 'pic/430104201711170308.jpg',
+                'pic/430104201712030251.jpg', 'pic/430104201712060338.jpg', 'pic/430104201712290344.jpg',
+                'pic/430104201801070247.jpg', 'pic/430104201801110130.jpg', 'pic/430104201801200291.jpg',
+                'pic/43010420180209040X.jpg', 'pic/430104201802100348.jpg', 'pic/430104201802210408.jpg',
+                'pic/43010420180223029X.jpg', 'pic/430104201802280350.jpg', 'pic/430104201804110275.jpg',
+                'pic/43010420180428008X.jpg', 'pic/430104201805090077.jpg', 'pic/430104201805210112.jpg',
+                'pic/43010420180527006X.jpg', 'pic/430104201806090167.jpg', 'pic/430104201806280323.jpg',
+                'pic/430104201807040081.jpg', 'pic/430104201808050118.jpg', 'pic/430104201808130089.jpg',
+                'pic/430104201808220041.jpg', 'pic/430104201810050221.jpg', 'pic/430104201811190285.jpg',
+                'pic/430111201712050176.jpg', 'pic/430122201804190079.jpg', 'pic/43012420171211053X.jpg',
+                'pic/43012420180624028X.jpg', 'pic/430181201803280216.jpg', 'pic/430203201710230013.jpg',
+                'pic/430602201806090022.jpg', 'pic/430681201803300130.jpg', 'pic/430703201809150133.jpg',
+                'pic/430923201804160152.jpg', 'pic/4301302201808090063.jpg', 'pic/431322201710310203.jpg'
+            ],
+            // FR-4.3: 音频资产
+            sounds: {
+                eat: 'sound/eat.mp3',
+                gameOver: 'sound/boom.mp3',
+                click: 'sound/choose.mp3',
+                // BGM an extra, as per PRD
+                bgm: 'sound/bgm.mp3'
+            },
+            
+            // Loaded asset cache
+            images: {},
+            audios: {}
+        };
+
+        class Game {
+            constructor() {
+                // DOM & Canvas
+                this.container = document.getElementById('game-container');
+                this.canvas = document.getElementById('game-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = CONFIG.CANVAS_WIDTH;
+                this.canvas.height = CONFIG.CANVAS_HEIGHT;
+
+                // [NEW] Background Canvas
+                this.bgCanvas = document.getElementById('background-canvas');
+                this.bgCtx = this.bgCanvas.getContext('2d');
+
+                this.settingsModal = document.getElementById('settings-modal');
+
+                // Game state
+                this.gameState = 'LOADING'; // LOADING, READY, COUNTDOWN, PLAYING, PAUSED, GAMEOVER
+                this.currentDifficulty = '普通';
+                this.gameLoopInterval = null;
+                this.lastLogicUpdateTime = 0;
+                this.isSettingsOpen = false;
+                this.wasPlayingBeforeSettings = false;
+                
+                // Game objects
+                this.snake = [];
+                this.food = {};
+                this.direction = { x: 1, y: 0 };
+                this.nextDirection = { x: 1, y: 0 };
+
+                // Score
+                this.score = 0;
+                this.highScore = localStorage.getItem(CONFIG.HIGH_SCORE_KEY) || 0;
+
+                // Effects
+                this.particles = [];
+                this.textPopups = [];
+                this.screenShake = { magnitude: 0, duration: 0, start: 0 };
+                this.rainbowHue = 0;
+                this.stars = []; 
+                this.shootingStars = [];
+                this.spaceships = [];
+
+                // Bind methods
+                this.renderLoop = this.renderLoop.bind(this);
+            }
+
+            // --- 1. INITIALIZATION ---
+            async init() {
+                this.handleResize(); // Set initial canvas sizes
+                this.createStarfield();
+                this.createGameUI();
+                await this.loadAssets();
+                this.setupEventListeners();
+                this.setupDPadListeners();
+                this.setupConsoleButtonListeners();
+                this.scheduleNextShootingStar();
+                this.scheduleNextSpaceship();
+                this.updateScoreDisplay();
+                this.setGameState('READY');
+                requestAnimationFrame(this.renderLoop);
+            }
+
+            // FR-2.1.2 & others: Generate all visual assets with SVG
+            createGameUI() {
+                // [REMOVED] Body background SVG is no longer needed
+                const consoleSvg = `
+                    <svg viewBox="0 0 1000 900" xmlns="http://www.w3.org/2000/svg" style="font-family: 'Courier New', monospace;">
+                        <defs>
+                            <linearGradient id="grad-console" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#80c6ff; stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#4a90e2; stop-opacity:1" />
+                            </linearGradient>
+                            <filter id="drop-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+                                <feOffset dx="2" dy="4" result="offsetblur"/>
+                                <feComponentTransfer>
+                                    <feFuncA type="linear" slope="0.5"/>
+                                </feComponentTransfer>
+                                <feMerge>
+                                    <feMergeNode/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                             <filter id="inner-shadow">
+                                <feOffset dx="0" dy="2"/>
+                                <feGaussianBlur stdDeviation="2" result="offset-blur"/>
+                                <feComposite operator="out" in="SourceGraphic" in2="offset-blur" result="inverse"/>
+                                <feFlood flood-color="#000" flood-opacity="0.5" result="color"/>
+                                <feComposite operator="in" in="color" in2="inverse" result="shadow"/>
+                                <feComposite operator="over" in="shadow" in2="SourceGraphic"/>
+                            </filter>
+                        </defs>
+
+                        <!-- FR-2.1.2.1: Main Body -->
+                        <rect width="1000" height="900" rx="50" fill="url(#grad-console)" />
+
+                        <!-- FR-2.1.2.2: Screen Area -->
+                        <rect x="50" y="40" width="900" height="700" rx="20" fill="#2c3e50" />
+                        <rect x="95" y="60" width="810" height="650" rx="10" fill="#1a242f" />
+                        
+                        <!-- FR-2.1.2.3: D-Pad (MODIFIED for better spacing) -->
+                        <g id="d-pad" transform="translate(150, 770)" filter="url(#drop-shadow)">
+                            <rect id="d-pad-up" x="40" y="0" width="40" height="50" rx="10" fill="#34495e" />
+                            <rect id="d-pad-down" x="40" y="70" width="40" height="50" rx="10" fill="#34495e" />
+                            <rect id="d-pad-left" x="0" y="40" width="50" height="40" rx="10" fill="#34495e" />
+                            <rect id="d-pad-right" x="70" y="40" width="50" height="40" rx="10" fill="#34495e" />
+                            <rect x="40" y="40" width="40" height="40" fill="#34495e" />
+                        </g>
+
+                        <!-- Center Console Buttons (MODIFIED for centering) -->
+                        <g id="settings-button" transform="translate(370, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
+                            <rect width="120" height="40" rx="10" fill="#ecf0f1" />
+                        </g>
+                        <g id="start-pause-button" transform="translate(510, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
+                            <rect width="120" height="40" rx="10" fill="#2c3e50" />
+                        </g>
+
+                        <!-- FR-2.1.2.4: Function Keys (MODIFIED for better spacing and alignment) -->
+                        <g id="action-buttons" transform="translate(820, 820)" filter="url(#drop-shadow)">
+                            <circle cx="0" cy="-50" r="25" fill="#e74c3c" />
+                            <circle cx="50" cy="0" r="25" fill="#f1c40f" />
+                            <circle cx="0" cy="50" r="25" fill="#2ecc71" />
+                            <circle cx="-50" cy="0" r="25" fill="#3498db" />
+                        </g>
+                    </svg>`;
+                this.container.insertAdjacentHTML('afterbegin', consoleSvg);
+                
+                // Cache UI elements
+                this.dPad = {
+                    up: document.getElementById('d-pad-up'),
+                    down: document.getElementById('d-pad-down'),
+                    left: document.getElementById('d-pad-left'),
+                    right: document.getElementById('d-pad-right'),
+                };
+                this.settingsButton = document.getElementById('settings-button');
+                this.startPauseButton = document.getElementById('start-pause-button');
+            }
+
+            // NFR-2.2: Preload all assets
+            async loadAssets() {
+                const imagePromises = [ASSETS.snakeHeadImageSrc, ...ASSETS.foodImageSrcs].map(src => 
+                    new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.src = src;
+                        img.onload = () => { ASSETS.images[src] = img; resolve(); };
+                        img.onerror = reject;
+                    })
+                );
+
+                const audioPromises = Object.entries(ASSETS.sounds).map(([key, src]) =>
+                    new Promise((resolve) => {
+                        const audio = new Audio(src);
+                        audio.oncanplaythrough = () => {
+                            ASSETS.audios[key] = audio;
+                            resolve();
+                        };
+                        ASSETS.audios[key] = audio;
+                        resolve();
+                    })
+                );
+
+                await Promise.all([...imagePromises, ...audioPromises]).catch(err => {
+                    console.error("Failed to load assets:", err);
+                });
+
+                this.createUIControls();
+            }
+
+            // [MODIFIED] This now populates the settings modal
+            createUIControls() {
+                const modalContent = this.settingsModal.querySelector('.modal-content');
+                
+                const difficultyLabels = {
+                    '入门': '入门 (慢速)',
+                    '简单': '简单 (中速)',
+                    '普通': '普通 (快速)',
+                    '困难': '困难 (极速)'
+                };
+
+                Object.keys(CONFIG.DIFFICULTY).forEach(level => {
+                    const button = document.createElement('button');
+                    button.innerText = difficultyLabels[level] || level;
+                    if (level === this.currentDifficulty) button.classList.add('active');
+                    
+                    button.onclick = () => {
+                        this.playSound('click');
+                        this.currentDifficulty = level;
+                        modalContent.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                        button.classList.add('active');
+
+                        if (this.gameState === 'PLAYING' || this.gameState === 'PAUSED') {
+                            clearInterval(this.gameLoopInterval);
+                            this.gameLoopInterval = setInterval(() => this.gameLogicLoop(), CONFIG.DIFFICULTY[this.currentDifficulty]);
+                        }
+                        // Close modal after selection
+                        setTimeout(() => this.toggleSettingsModal(false), 200);
+                    };
+                    modalContent.appendChild(button);
+                });
+            }
+            
+            // FR-3: Setup all event listeners
+            setupEventListeners() {
+                window.addEventListener('keydown', e => this.handleKeyDown(e));
+                window.addEventListener('keyup', e => this.handleKeyUp(e));
+                window.addEventListener('resize', this.handleResize.bind(this));
+            }
+
+            // [NEW] Setup D-Pad click listeners
+            setupDPadListeners() {
+                const directions = {
+                    up: { x: 0, y: -1 },
+                    down: { x: 0, y: 1 },
+                    left: { x: -1, y: 0 },
+                    right: { x: 1, y: 0 }
+                };
+
+                for (const dir in directions) {
+                    const element = this.dPad[dir];
+                    if (element) {
+                        element.style.cursor = 'pointer';
+
+                        const press = (e) => {
+                            e.preventDefault();
+                            if (this.gameState !== 'PLAYING' && this.gameState !== 'PAUSED') return;
+                            this.playSound('click');
+                            this.nextDirection = directions[dir];
+                            this.updateDPadVisual(dir, true);
+                        };
+                        
+                        const release = (e) => {
+                             e.preventDefault();
+                            this.updateDPadVisual(dir, false);
+                        };
+
+                        element.addEventListener('mousedown', press);
+                        element.addEventListener('touchstart', press);
+                        element.addEventListener('mouseup', release);
+                        element.addEventListener('mouseleave', release);
+                        element.addEventListener('touchend', release);
+                    }
+                }
+            }
+            
+            // [NEW] Setup new console buttons
+            setupConsoleButtonListeners() {
+                this.startPauseButton.addEventListener('click', () => this.handleStartPauseClick());
+                this.settingsButton.addEventListener('click', () => this.toggleSettingsModal(true));
+            }
+            
+            // [REVISED] Handle responsive scaling for mobile using JS transform
+            handleResize() {
+                // Resize background canvas
+                this.bgCanvas.width = window.innerWidth;
+                this.bgCanvas.height = window.innerHeight;
+                this.createStarfield(); // Regenerate stars for new size
+
+                // Scale game console
+                const wrapper = document.getElementById('main-wrapper');
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                const baseWidth = 1000;
+                const baseHeight = 900;
+                
+                let scale;
+                if (viewportWidth / viewportHeight > baseWidth / baseHeight) {
+                    scale = viewportHeight / baseHeight;
+                } else {
+                    scale = viewportWidth / baseWidth;
+                }
+                
+                scale *= 0.95;
+                scale = Math.min(1, scale); 
+
+                wrapper.style.transform = `scale(${scale})`;
+                wrapper.style.transformOrigin = 'center center';
+            }
+
+
+            // --- 2. GAME STATE MANAGEMENT ---
+            setGameState(newState) {
+                this.gameState = newState;
+                switch (newState) {
+                    case 'READY':
+                        this.hideGameOverPanel();
+                        break;
+                    case 'COUNTDOWN':
+                        this.startCountdown();
+                        break;
+                    case 'PLAYING':
+                        this.lastLogicUpdateTime = performance.now();
+                        this.gameLoopInterval = setInterval(() => this.gameLogicLoop(), CONFIG.DIFFICULTY[this.currentDifficulty]);
+                        this.playBGM(true);
+                        break;
+                    case 'PAUSED':
+                        clearInterval(this.gameLoopInterval);
+                        this.playBGM(false);
+                        break;
+                    case 'GAMEOVER':
+                        clearInterval(this.gameLoopInterval);
+                        this.playSound('gameOver');
+                        this.playBGM(false, true);
+                        this.triggerScreenShake(10, 500); // FR-4.1.2
+                        // Flash effect
+                        this.container.style.transition = 'background-color 0.05s';
+                        this.container.style.backgroundColor = 'white';
+                        setTimeout(() => this.container.style.backgroundColor = '', 50);
+
+                        if (this.score > this.highScore) {
+                            this.highScore = this.score;
+                            localStorage.setItem(CONFIG.HIGH_SCORE_KEY, this.highScore);
+                        }
+                        setTimeout(() => this.showGameOverPanel(), 1000);
+                        break;
+                }
+            }
+
+            startGame() {
+                this.playSound('click');
+                this.resetGame();
+                this.setGameState('COUNTDOWN');
+            }
+            
+            resetGame() {
+                this.snake = [{ 
+                    x: Math.floor((CONFIG.CANVAS_WIDTH / CONFIG.GRID_SIZE) / 2), 
+                    y: Math.floor((CONFIG.CANVAS_HEIGHT / CONFIG.GRID_SIZE) / 2),
+                    image: ASSETS.images[ASSETS.snakeHeadImageSrc],
+                    px: 0, py: 0 // For smooth rendering
+                }];
+                // Initialize previous positions for interpolation
+                 this.snake[0].px = this.snake[0].x;
+                 this.snake[0].py = this.snake[0].y;
+
+                this.direction = { x: 1, y: 0 };
+                this.nextDirection = { x: 1, y: 0 };
+                this.score = 0;
+                this.generateFood();
+            }
+
+            // FR-2.5.1: Countdown animation
+            startCountdown() {
+                let count = 3;
+                const doCount = () => {
+                    if (count > 0) {
+                        this.textPopups.push(new TextPopup(count.toString(), CONFIG.CANVAS_WIDTH / 2, CONFIG.CANVAS_HEIGHT / 2, {
+                            size: 200,
+                            duration: 900,
+                            animation: 'zoom-out'
+                        }));
+                        this.playSound('click');
+                        count--;
+                        setTimeout(doCount, 1000);
+                    } else {
+                        this.setGameState('PLAYING');
+                    }
+                };
+                doCount();
+            }
+            
+            // --- 3. CORE GAME LOGIC ---
+            
+            gameLogicLoop() {
+                this.lastLogicUpdateTime = performance.now();
+                
+                // FR-1.1.3: Prevent 180-degree turns
+                if ( (this.nextDirection.x !== -this.direction.x || this.direction.x === 0) &&
+                     (this.nextDirection.y !== -this.direction.y || this.direction.y === 0) ) {
+                    this.direction = { ...this.nextDirection };
+                }
+                
+                const oldHead = this.snake[0];
+                const newHead = {
+                    x: oldHead.x + this.direction.x,
+                    y: oldHead.y + this.direction.y,
+                    px: oldHead.x,
+                    py: oldHead.y,
+                    image: ASSETS.images[ASSETS.snakeHeadImageSrc]
+                };
+
+                if (this.isCollision(newHead)) {
+                    this.setGameState('GAMEOVER');
+                    return;
+                }
+
+                const ateFood = (newHead.x === this.food.x && newHead.y === this.food.y);
+                
+                if (ateFood) {
+                    newHead.image = this.food.image;
+                }
+
+                this.snake.unshift(newHead);
+
+                if (ateFood) {
+                    this.snake[0].image = ASSETS.images[ASSETS.snakeHeadImageSrc];
+                    
+                    this.score++;
+                    this.playSound('eat');
+                    this.textPopups.push(new TextPopup("+1", this.food.x * CONFIG.GRID_SIZE, this.food.y * CONFIG.GRID_SIZE, {
+                        color: '#2ecc71',
+                        velocity: { y: -2 }
+                    }));
+                    this.generateFood();
+                } else {
+                    this.snake.pop(); // Remove tail if no food was eaten
+                }
+            }
+            
+            isCollision(head) {
+                // FR-3.1.1: Wall collision
+                if (head.x < 0 || head.x >= CONFIG.CANVAS_WIDTH / CONFIG.GRID_SIZE ||
+                    head.y < 0 || head.y >= CONFIG.CANVAS_HEIGHT / CONFIG.GRID_SIZE) {
+                    return true;
+                }
+                // FR-3.1.2: Self collision
+                for (let i = 1; i < this.snake.length; i++) {
+                    if (head.x === this.snake[i].x && head.y === this.snake[i].y) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            // FR-2.2 & 2.3: Generate food
+            generateFood() {
+                let foodX, foodY, onSnake;
+                do {
+                    onSnake = false;
+                    foodX = Math.floor(Math.random() * (CONFIG.CANVAS_WIDTH / CONFIG.GRID_SIZE));
+                    foodY = Math.floor(Math.random() * (CONFIG.CANVAS_HEIGHT / CONFIG.GRID_SIZE));
+                    for (const segment of this.snake) {
+                        if (segment.x === foodX && segment.y === foodY) {
+                            onSnake = true;
+                            break;
+                        }
+                    }
+                } while (onSnake);
+                
+                const randomFoodSrc = ASSETS.foodImageSrcs[Math.floor(Math.random() * ASSETS.foodImageSrcs.length)];
+                this.food = { 
+                    x: foodX, 
+                    y: foodY, 
+                    image: ASSETS.images[randomFoodSrc]
+                };
+            }
+
+            // --- 4. RENDERING & EFFECTS ---
+            
+            // This runs on requestAnimationFrame
+            renderLoop(timestamp) {
+                // Update and draw the main background
+                this.drawCosmicBackground(timestamp);
+
+                // Clear the game canvas
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Draw the grid inside the game screen
+                this.drawGameScreenGrid();
+
+                this.updateAndDrawCosmicEcosystem();
+
+                // Draw game elements only if not in READY state
+                if (this.gameState !== 'READY') {
+                    if (this.screenShake.duration > 0) {
+                        const elapsed = timestamp - this.screenShake.start;
+                        if (elapsed < this.screenShake.duration) {
+                            const x = (Math.random() - 0.5) * this.screenShake.magnitude;
+                            const y = (Math.random() - 0.5) * this.screenShake.magnitude;
+                            this.ctx.save();
+                            this.ctx.translate(x, y);
+                        } else {
+                            this.screenShake.duration = 0;
+                        }
+                    }
+                    
+                    this.drawFood();
+                    this.drawSnake(timestamp);
+                    
+                    if (this.screenShake.duration > 0) this.ctx.restore();
+                }
+                
+                this.drawScores();
+                
+                this.updateAndDrawParticles();
+                this.updateAndDrawTextPopups();
+
+                if (this.gameState === 'PAUSED') this.drawPausePanel();
+                if (this.gameState === 'READY') this.drawReadyScreen();
+                
+                requestAnimationFrame(this.renderLoop);
+            }
+
+            createStarfield() {
+                this.stars = [];
+                const starCount = 500; // More stars for the whole screen
+                for (let i = 0; i < starCount; i++) {
+                    const layer = Math.floor(Math.random() * 3) + 1; 
+                    const baseOpacity = Math.random() * 0.5 + 0.3;
+                    this.stars.push({
+                        x: Math.random() * this.bgCanvas.width,
+                        y: Math.random() * this.bgCanvas.height,
+                        size: (3 - layer) * 0.7 + 0.5, 
+                        baseOpacity: baseOpacity,
+                        opacity: baseOpacity,
+                        layer: layer,
+                        twinkleSpeed: Math.random() * 0.5 + 0.1,
+                        twinklePhase: Math.random() * Math.PI * 2,
+                    });
+                }
+            }
+
+            drawCosmicBackground(timestamp) {
+                this.bgCtx.clearRect(0, 0, this.bgCanvas.width, this.bgCanvas.height);
+                const gradient = this.bgCtx.createRadialGradient(
+                    this.bgCanvas.width / 2, this.bgCanvas.height / 2, 0,
+                    this.bgCanvas.width / 2, this.bgCanvas.height / 2, this.bgCanvas.width / 1.5
+                );
+                gradient.addColorStop(0, '#483D8B'); 
+                gradient.addColorStop(1, '#191970'); 
+                this.bgCtx.fillStyle = gradient;
+                this.bgCtx.fillRect(0, 0, this.bgCanvas.width, this.bgCanvas.height);
+
+                const speeds = { 1: 0.25, 2: 0.15, 3: 0.05 };
+                this.stars.forEach(star => {
+                    star.y += speeds[star.layer];
+                    if (star.y > this.bgCanvas.height) {
+                        star.y = 0;
+                        star.x = Math.random() * this.bgCanvas.width;
+                    }
+
+                    const twinkle = Math.sin(timestamp * 0.001 * star.twinkleSpeed + star.twinklePhase) * 0.5 + 0.5;
+                    star.opacity = star.baseOpacity * twinkle;
+
+                    this.bgCtx.beginPath();
+                    this.bgCtx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                    this.bgCtx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`;
+                    this.bgCtx.fill();
+                });
+            }
+            
+            drawGameScreenGrid() {
+                 // Draw Glowing Grid on the game canvas
+                this.ctx.save();
+                this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.2)';
+                this.ctx.shadowColor = 'cyan';
+                this.ctx.shadowBlur = 10;
+                this.ctx.lineWidth = 1;
+
+                for (let x = 0; x < CONFIG.CANVAS_WIDTH; x += CONFIG.GRID_SIZE) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x, 0);
+                    this.ctx.lineTo(x, CONFIG.CANVAS_HEIGHT);
+                    this.ctx.stroke();
+                }
+                for (let y = 0; y < CONFIG.CANVAS_HEIGHT; y += CONFIG.GRID_SIZE) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(0, y);
+                    this.ctx.lineTo(CONFIG.CANVAS_WIDTH, y);
+                    this.ctx.stroke();
+                }
+                this.ctx.restore();
+            }
+
+            // [NEW] Methods for managing cosmic events
+            scheduleNextShootingStar() {
+                const delay = Math.random() * 7000 + 3000; // 3-10 seconds
+                setTimeout(() => {
+                    this.shootingStars.push(new ShootingStar());
+                    this.scheduleNextShootingStar();
+                }, delay);
+            }
+
+            scheduleNextSpaceship() {
+                const delay = Math.random() * 15000 + 15000; // 15-30 seconds
+                setTimeout(() => {
+                    this.spaceships.push(new Spaceship());
+                    this.scheduleNextSpaceship();
+                }, delay);
+            }
+
+            updateAndDrawCosmicEcosystem() {
+                for (let i = this.shootingStars.length - 1; i >= 0; i--) {
+                    const ss = this.shootingStars[i];
+                    ss.update();
+                    ss.draw(this.ctx);
+                    if (ss.isOffscreen()) {
+                        this.shootingStars.splice(i, 1);
+                    }
+                }
+                for (let i = this.spaceships.length - 1; i >= 0; i--) {
+                    const sp = this.spaceships[i];
+                    sp.update();
+                    sp.draw(this.ctx);
+                    if (sp.isOffscreen()) {
+                        this.spaceships.splice(i, 1);
+                    }
+                }
+            }
+
+
+            drawFood() {
+                if (!this.food.image || this.gameState === 'READY') return;
+                 this.drawCircularImage(
+                    this.food.image,
+                    this.food.x * CONFIG.GRID_SIZE + CONFIG.GRID_SIZE / 2,
+                    this.food.y * CONFIG.GRID_SIZE + CONFIG.GRID_SIZE / 2,
+                    CONFIG.GRID_SIZE / 2
+                );
+            }
+
+            drawSnake(timestamp) {
+                if (this.snake.length === 0 || this.gameState === 'READY') return;
+
+                // FR-4.2.1: Smooth movement interpolation
+                let interpolationFactor = 0;
+                if (this.gameState === 'PLAYING') {
+                    interpolationFactor = (timestamp - this.lastLogicUpdateTime) / CONFIG.DIFFICULTY[this.currentDifficulty];
+                    interpolationFactor = Math.min(1, Math.max(0, interpolationFactor));
+                }
+                
+                // Draw body
+                for (let i = 1; i < this.snake.length; i++) {
+                    const segment = this.snake[i];
+                    const prevSegment = this.snake[i-1];
+                    
+                    const x = (segment.x * (1 - interpolationFactor) + prevSegment.px * interpolationFactor) * CONFIG.GRID_SIZE;
+                    const y = (segment.y * (1 - interpolationFactor) + prevSegment.py * interpolationFactor) * CONFIG.GRID_SIZE;
+
+                    this.drawCircularImage(
+                        segment.image,
+                        x + CONFIG.GRID_SIZE / 2,
+                        y + CONFIG.GRID_SIZE / 2,
+                        CONFIG.GRID_SIZE / 2 * 0.95 // Slightly smaller body
+                    );
+                }
+
+                // Draw head
+                const head = this.snake[0];
+                const headX = (head.px * (1 - interpolationFactor) + head.x * interpolationFactor) * CONFIG.GRID_SIZE;
+                const headY = (head.py * (1 - interpolationFactor) + head.y * interpolationFactor) * CONFIG.GRID_SIZE;
+                const centerX = headX + CONFIG.GRID_SIZE / 2;
+                const centerY = headY + CONFIG.GRID_SIZE / 2;
+                
+                // FR-2.3.2: Rainbow stroke
+                this.rainbowHue = (this.rainbowHue + 1) % 360;
+                const strokeColor = `hsl(${this.rainbowHue}, 100%, 70%)`;
+                this.drawCircularImage(
+                    head.image, centerX, centerY, CONFIG.GRID_SIZE / 2,
+                    strokeColor, 3
+                );
+                
+                // FR-2.3.2: Particle trail
+                if (this.gameState === 'PLAYING') {
+                    for (let i = 0; i < 2; i++) {
+                        this.particles.push(new Particle(centerX, centerY, strokeColor));
+                    }
+                }
+            }
+            
+            drawCircularImage(image, x, y, radius, strokeColor = null, strokeWidth = 0) {
+                this.ctx.save();
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, radius, 0, Math.PI * 2, true);
+                this.ctx.closePath();
+                
+                if (strokeColor) {
+                    this.ctx.strokeStyle = strokeColor;
+                    this.ctx.lineWidth = strokeWidth;
+                    this.ctx.stroke();
+                }
+                
+                this.ctx.clip();
+                this.ctx.drawImage(image, x - radius, y - radius, radius * 2, radius * 2);
+                this.ctx.restore();
+            }
+
+            updateAndDrawParticles() {
+                for (let i = this.particles.length - 1; i >= 0; i--) {
+                    const p = this.particles[i];
+                    p.update();
+                    p.draw(this.ctx);
+                    if (p.life <= 0) {
+                        this.particles.splice(i, 1);
+                    }
+                }
+            }
+            
+            updateAndDrawTextPopups() {
+                 for (let i = this.textPopups.length - 1; i >= 0; i--) {
+                    const t = this.textPopups[i];
+                    t.update();
+                    t.draw(this.ctx);
+                    if (t.life <= 0) {
+                        this.textPopups.splice(i, 1);
+                    }
+                }
+            }
+            
+            drawPausePanel() {
+                this.ctx.fillStyle = 'rgba(26, 36, 47, 0.7)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = 'bold 50px "Courier New", monospace';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('|| 游戏暂停', this.canvas.width / 2, this.canvas.height / 2);
+            }
+
+            // [NEW] Draw the ready screen
+            drawReadyScreen() {
+                // Dim the background
+                this.ctx.fillStyle = 'rgba(26, 36, 47, 0.7)';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // Set text styles
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+
+                // Game Title
+                this.ctx.fillStyle = 'white';
+                this.ctx.font = 'bold 60px "Courier New", monospace';
+                this.ctx.fillText('贪吃蛇 - 头像版', this.canvas.width / 2, this.canvas.height / 2 - 80);
+
+                // Start Instruction
+                this.ctx.font = '30px "Courier New", monospace';
+                this.ctx.fillText('按空格键开始游戏', this.canvas.width / 2, this.canvas.height / 2 + 20);
+
+                // Controls Instruction
+                this.ctx.fillStyle = '#bdc3c7'; // Lighter grey for secondary text
+                this.ctx.font = '22px "Courier New", monospace';
+                this.ctx.fillText('使用方向键或WASD控制移动', this.canvas.width / 2, this.canvas.height / 2 + 70);
+            }
+            
+            // [NEW] Draw scores directly on canvas
+            drawScores() {
+                this.ctx.save();
+                const padding = 20;
+                const boxHeight = 60;
+                const boxWidth = 180;
+                const cornerRadius = 10;
+                
+                // Common style
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                this.ctx.font = 'bold 20px "Courier New", monospace';
+                
+                // Score Box (Top Left)
+                this.ctx.beginPath();
+                this.ctx.roundRect(padding, padding, boxWidth, boxHeight, cornerRadius);
+                this.ctx.fill();
+
+                this.ctx.fillStyle = '#ecf0f1';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'top';
+                this.ctx.fillText('分数:', padding + boxWidth / 2, padding + 8);
+                
+                this.ctx.fillStyle = '#f1c40f';
+                this.ctx.font = 'bold 24px "Courier New", monospace';
+                this.ctx.fillText(this.score, padding + boxWidth / 2, padding + 30);
+                
+                // High Score Box (Top Right)
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+                this.ctx.font = 'bold 20px "Courier New", monospace';
+
+                const rightX = this.canvas.width - padding - boxWidth;
+                this.ctx.beginPath();
+                this.ctx.roundRect(rightX, padding, boxWidth, boxHeight, cornerRadius);
+                this.ctx.fill();
+                
+                this.ctx.fillStyle = '#ecf0f1';
+                this.ctx.fillText('最高分:', rightX + boxWidth / 2, padding + 8);
+                
+                this.ctx.fillStyle = '#f1c40f';
+                this.ctx.font = 'bold 24px "Courier New", monospace';
+                this.ctx.fillText(this.highScore, rightX + boxWidth / 2, padding + 30);
+
+                this.ctx.restore();
+            }
+
+            showGameOverPanel() {
+                let panel = document.getElementById('game-over-panel');
+                if (!panel) {
+                    panel = document.createElement('div');
+                    panel.id = 'game-over-panel';
+                    this.container.appendChild(panel);
+                }
+                const svgContent = `
+                    <svg width="450" height="300" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <filter id="panel-shadow">
+                                <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.5"/>
+                            </filter>
+                        </defs>
+                        <g filter="url(#panel-shadow)">
+                            <rect width="450" height="300" rx="20" fill="#34495e" stroke="#ecf0f1" stroke-width="3"/>
+                            <text x="225" y="60" text-anchor="middle" font-size="40" font-weight="bold" fill="#e74c3c">游戏结束</text>
+                            <text x="225" y="120" text-anchor="middle" font-size="28" fill="#ecf0f1">得分: <tspan fill="#f1c40f">${this.score}</tspan></text>
+                            <text x="225" y="160" text-anchor="middle" font-size="24" fill="#ecf0f1">最高分: <tspan fill="#f1c40f">${this.highScore}</tspan></text>
+                            
+                            <g id="restart-button" style="cursor: pointer;">
+                                <rect x="125" y="200" width="200" height="60" rx="15" fill="#2ecc71"/>
+                                <text x="225" y="240" text-anchor="middle" font-size="28" font-weight="bold" fill="#fff" pointer-events="none">再玩一局</text>
+                            </g>
+                        </g>
+                    </svg>`;
+                panel.innerHTML = svgContent;
+                panel.querySelector('#restart-button').onclick = () => {
+                    this.playSound('click');
+                    panel.classList.remove('visible');
+                    setTimeout(() => this.setGameState('READY'), 300);
+                };
+                 setTimeout(() => panel.classList.add('visible'), 50);
+            }
+
+            hideGameOverPanel() {
+                 let panel = document.getElementById('game-over-panel');
+                 if(panel) panel.classList.remove('visible');
+            }
+            
+            triggerScreenShake(magnitude, duration) {
+                this.screenShake = { magnitude, duration, start: performance.now() };
+            }
+            
+            // --- 5. INPUT & UI HANDLING ---
+
+            handleKeyDown(e) {
+                if (this.isSettingsOpen && e.key === 'Escape') {
+                    this.toggleSettingsModal(false);
+                    return;
+                }
+                if (this.isSettingsOpen) return; // Ignore other keys when settings are open
+
+                if ((this.gameState === 'READY' || this.gameState === 'GAMEOVER') && (e.key === ' ' || e.key === 'Enter')) {
+                    this.startGame();
+                    return;
+                }
+
+                if (this.gameState !== 'PLAYING' && this.gameState !== 'PAUSED') return;
+
+                let handled = false;
+                switch (e.key) {
+                    case 'ArrowUp': case 'w': this.nextDirection = { x: 0, y: -1 }; this.updateDPadVisual('up', true); handled = true; break;
+                    case 'ArrowDown': case 's': this.nextDirection = { x: 0, y: 1 }; this.updateDPadVisual('down', true); handled = true; break;
+                    case 'ArrowLeft': case 'a': this.nextDirection = { x: -1, y: 0 }; this.updateDPadVisual('left', true); handled = true; break;
+                    case 'ArrowRight': case 'd': this.nextDirection = { x: 1, y: 0 }; this.updateDPadVisual('right', true); handled = true; break;
+                    case 'p': case 'Escape': case ' ': this.handleStartPauseClick(); handled = true; break;
+                }
+                if (handled) e.preventDefault();
+            }
+
+            handleKeyUp(e) {
+                 switch (e.key) {
+                    case 'ArrowUp': case 'w': this.updateDPadVisual('up', false); break;
+                    case 'ArrowDown': case 's': this.updateDPadVisual('down', false); break;
+                    case 'ArrowLeft': case 'a': this.updateDPadVisual('left', false); break;
+                    case 'ArrowRight': case 'd': this.updateDPadVisual('right', false); break;
+                }
+            }
+            
+            handleStartPauseClick() {
+                this.playSound('click');
+                if (this.gameState === 'PLAYING') this.setGameState('PAUSED');
+                else if (this.gameState === 'PAUSED') this.setGameState('PLAYING');
+                else if (this.gameState === 'READY' || this.gameState === 'GAMEOVER') this.startGame();
+            }
+
+            toggleSettingsModal(show) {
+                this.playSound('click');
+                this.isSettingsOpen = show;
+                if (show) {
+                    if (this.gameState === 'PLAYING') {
+                        this.wasPlayingBeforeSettings = true;
+                        this.setGameState('PAUSED');
+                    }
+                    this.settingsModal.classList.add('visible');
+                } else {
+                    if (this.wasPlayingBeforeSettings) {
+                        this.setGameState('PLAYING');
+                    }
+                    this.wasPlayingBeforeSettings = false;
+                    this.settingsModal.classList.remove('visible');
+                }
+            }
+            
+            updateDPadVisual(direction, isPressed) {
+                if (this.dPad[direction]) {
+                    this.dPad[direction].setAttribute('fill', isPressed ? '#566573' : '#34495e');
+                    if(isPressed) this.dPad[direction].setAttribute('filter', 'url(#inner-shadow)');
+                    else this.dPad[direction].setAttribute('filter', 'none');
+                }
+            }
+            
+            updateScoreDisplay() { /* No longer needed as score is drawn on canvas */ }
+
+            // --- 6. AUDIO HANDLING ---
+            playSound(soundKey) {
+                if (ASSETS.audios[soundKey]) {
+                    ASSETS.audios[soundKey].currentTime = 0;
+                    ASSETS.audios[soundKey].play();
+                }
+            }
+            
+            playBGM(play, isEnd = false) {
+                 const bgm = ASSETS.audios.bgm;
+                 if (!bgm) return;
+
+                 if (isEnd) {
+                     bgm.pause();
+                     bgm.currentTime = 0;
+                     return;
+                 }
+                
+                 if (play) {
+                     bgm.loop = true;
+                     bgm.volume = 0.5;
+                     bgm.play();
+                 } else { // Pause
+                     bgm.volume = 0.2;
+                 }
+            }
+        }
+
+        // --- HELPER CLASSES FOR EFFECTS ---
+
+        class Particle {
+            constructor(x, y, color) {
+                this.x = x; this.y = y;
+                this.size = Math.random() * 5 + 2;
+                this.speedX = Math.random() * 3 - 1.5;
+                this.speedY = Math.random() * 3 - 1.5;
+                this.color = color; this.life = 1; 
+                this.decay = Math.random() * 0.05 + 0.01;
+            }
+            update() {
+                this.x += this.speedX; this.y += this.speedY;
+                this.life -= this.decay;
+                if(this.size > 0.2) this.size -= 0.1;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = this.life; ctx.fillStyle = this.color;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill(); ctx.restore();
+            }
+        }
+        
+        class TextPopup {
+            constructor(text, x, y, options = {}) {
+                this.text = text; this.x = x; this.y = y;
+                this.life = 1; this.decay = options.duration ? 1 / (options.duration / 16.67) : 0.02;
+                this.options = { size: 30, color: '#fff', velocity: { x: 0, y: -1 }, animation: 'float-up', ...options };
+                this.initialSize = this.options.size;
+            }
+            update() {
+                this.life -= this.decay;
+                this.x += this.options.velocity.x; this.y += this.options.velocity.y;
+                if (this.options.animation === 'zoom-out') this.options.size = this.initialSize * this.life;
+            }
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life * 2);
+                ctx.fillStyle = this.options.color; ctx.strokeStyle = 'black';
+                ctx.lineWidth = 2; ctx.font = `bold ${this.options.size}px "Courier New", monospace`;
+                ctx.textAlign = 'center'; ctx.strokeText(this.text, this.x, this.y);
+                ctx.fillText(this.text, this.x, this.y); ctx.restore();
+            }
+        }
+
+        class ShootingStar {
+            constructor() {
+                this.x = Math.random() * CONFIG.CANVAS_WIDTH + CONFIG.CANVAS_WIDTH / 2;
+                this.y = Math.random() * -CONFIG.CANVAS_HEIGHT / 2;
+                this.len = Math.random() * 80 + 120;
+                this.speed = Math.random() * 5 + 8;
+                this.life = 1; this.angle = -Math.PI / 4;
+            }
+            update() {
+                this.x += this.speed * Math.cos(this.angle); this.y += this.speed * Math.sin(this.angle);
+                this.life *= 0.99;
+            }
+            draw(ctx) {
+                ctx.save();
+                const endX = this.x + this.len * Math.cos(this.angle); const endY = this.y + this.len * Math.sin(this.angle);
+                const gradient = ctx.createLinearGradient(this.x, this.y, endX, endY);
+                gradient.addColorStop(0, `rgba(255, 255, 255, ${this.life * 0.8})`);
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.strokeStyle = gradient; ctx.lineWidth = 2; ctx.beginPath();
+                ctx.moveTo(this.x, this.y); ctx.lineTo(endX, endY); ctx.stroke();
+                ctx.restore();
+            }
+            isOffscreen() { return this.x < -this.len || this.y > CONFIG.CANVAS_HEIGHT + this.len || this.life < 0.01; }
+        }
+        
+        class Spaceship {
+             constructor() {
+                this.x = -40; this.y = Math.random() * (CONFIG.CANVAS_HEIGHT - 100) + 50;
+                this.speed = Math.random() * 1 + 0.5; this.size = 15;
+                this.engineParticles = []; this.pathPhase = Math.random() * Math.PI * 2;
+            }
+            update() {
+                this.x += this.speed; this.y += Math.sin(this.pathPhase + this.x / 100) * 0.5;
+                if (Math.random() > 0.3) {
+                    this.engineParticles.push(new Particle(this.x - this.size, this.y, `hsl(${Math.random() * 60}, 100%, 70%)`));
+                }
+                for (let i = this.engineParticles.length - 1; i >= 0; i--) {
+                    this.engineParticles[i].update();
+                    if (this.engineParticles[i].life <= 0) this.engineParticles.splice(i, 1);
+                }
+            }
+            draw(ctx) {
+                this.engineParticles.forEach(p => p.draw(ctx));
+                ctx.save();
+                ctx.fillStyle = '#c0c0c0'; ctx.shadowColor = '#ffffff';
+                ctx.shadowBlur = 8; ctx.beginPath();
+                ctx.moveTo(this.x + this.size, this.y);
+                ctx.lineTo(this.x - this.size, this.y - this.size / 2);
+                ctx.lineTo(this.x - this.size * 0.8, this.y);
+                ctx.lineTo(this.x - this.size, this.y + this.size / 2);
+                ctx.closePath(); ctx.fill();
+                ctx.restore();
+            }
+            isOffscreen() { return this.x > CONFIG.CANVAS_WIDTH + this.size * 2; }
+        }
+
+
+        // --- START THE GAME ---
+        const game = new Game();
+        game.init();
+
+    });
+    </script>
+</body>
+</html>
