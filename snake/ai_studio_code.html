@@ -351,8 +351,8 @@
                         <rect x="50" y="40" width="900" height="700" rx="20" fill="#2c3e50" />
                         <rect x="95" y="60" width="810" height="650" rx="10" fill="#1a242f" />
                         
-                        <!-- FR-2.1.2.3: D-Pad (MODIFIED for better spacing) -->
-                        <g id="d-pad" transform="translate(150, 770)" filter="url(#drop-shadow)">
+                        <!-- [MODIFIED] D-Pad with new coordinates for better centering -->
+                        <g id="d-pad" transform="translate(120, 770)" filter="url(#drop-shadow)">
                             <rect id="d-pad-up" x="40" y="0" width="40" height="50" rx="10" fill="#34495e" />
                             <rect id="d-pad-down" x="40" y="70" width="40" height="50" rx="10" fill="#34495e" />
                             <rect id="d-pad-left" x="0" y="40" width="50" height="40" rx="10" fill="#34495e" />
@@ -360,15 +360,15 @@
                             <rect x="40" y="40" width="40" height="40" fill="#34495e" />
                         </g>
 
-                        <!-- Center Console Buttons (MODIFIED for centering) -->
-                        <g id="settings-button" transform="translate(370, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
+                        <!-- [MODIFIED] Center Console Buttons with new coordinates -->
+                        <g id="settings-button" transform="translate(380, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
                             <rect width="120" height="40" rx="10" fill="#ecf0f1" />
                         </g>
-                        <g id="start-pause-button" transform="translate(510, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
+                        <g id="start-pause-button" transform="translate(520, 810)" filter="url(#drop-shadow)" style="cursor: pointer;">
                             <rect width="120" height="40" rx="10" fill="#2c3e50" />
                         </g>
 
-                        <!-- FR-2.1.2.4: Function Keys (MODIFIED for better spacing and alignment) -->
+                        <!-- [MODIFIED] Function Keys with new coordinates -->
                         <g id="action-buttons" transform="translate(820, 820)" filter="url(#drop-shadow)">
                             <circle cx="0" cy="-50" r="25" fill="#e74c3c" />
                             <circle cx="50" cy="0" r="25" fill="#f1c40f" />
@@ -501,7 +501,7 @@
                 this.settingsButton.addEventListener('click', () => this.toggleSettingsModal(true));
             }
             
-            // [REVISED] Handle responsive scaling for mobile using JS transform
+            // [REVISED] Handle responsive scaling for both desktop and mobile
             handleResize() {
                 // Resize background canvas
                 this.bgCanvas.width = window.innerWidth;
@@ -516,14 +516,23 @@
                 const baseWidth = 1000;
                 const baseHeight = 900;
                 
+                const baseAspectRatio = baseWidth / baseHeight;
+                const viewportAspectRatio = viewportWidth / viewportHeight;
+
                 let scale;
-                if (viewportWidth / viewportHeight > baseWidth / baseHeight) {
+                if (viewportAspectRatio > baseAspectRatio) {
                     scale = viewportHeight / baseHeight;
                 } else {
                     scale = viewportWidth / baseWidth;
                 }
                 
-                scale *= 0.95;
+                // [NEW] Apply more padding on tall (mobile) screens to avoid UI overlap
+                if (viewportAspectRatio < 1) { // Simple check for portrait mode
+                    scale *= 0.90;
+                } else {
+                    scale *= 0.95;
+                }
+                
                 scale = Math.min(1, scale); 
 
                 wrapper.style.transform = `scale(${scale})`;
