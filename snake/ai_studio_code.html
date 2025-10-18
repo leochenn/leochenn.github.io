@@ -368,12 +368,12 @@
                             <rect width="120" height="40" rx="10" fill="#2c3e50" />
                         </g>
 
-                        <!-- [MODIFIED] Function Keys with new coordinates -->
+                        <!-- [MODIFIED] Function Keys with new coordinates and Nintendo-like colors -->
                         <g id="action-buttons" transform="translate(820, 820)" filter="url(#drop-shadow)">
-                            <circle cx="0" cy="-50" r="25" fill="#e74c3c" />
-                            <circle cx="50" cy="0" r="25" fill="#f1c40f" />
-                            <circle cx="0" cy="50" r="25" fill="#2ecc71" />
-                            <circle cx="-50" cy="0" r="25" fill="#3498db" />
+                            <circle cx="0" cy="-50" r="25" fill="#e74c3c" /> <!-- Red (B) -->
+                            <circle cx="50" cy="0" r="25" fill="#f1c40f" /> <!-- Yellow (Y) -->
+                            <circle cx="0" cy="50" r="25" fill="#2ecc71" /> <!-- Green (A) -->
+                            <circle cx="-50" cy="0" r="25" fill="#3498db" /> <!-- Blue (X) -->
                         </g>
                     </svg>`;
                 this.container.insertAdjacentHTML('afterbegin', consoleSvg);
@@ -516,23 +516,17 @@
                 const baseWidth = 1000;
                 const baseHeight = 900;
                 
-                const baseAspectRatio = baseWidth / baseHeight;
-                const viewportAspectRatio = viewportWidth / viewportHeight;
+                // Calculate scale based on both width and height constraints
+                const scaleX = viewportWidth / baseWidth;
+                const scaleY = viewportHeight / baseHeight;
 
-                let scale;
-                if (viewportAspectRatio > baseAspectRatio) {
-                    scale = viewportHeight / baseHeight;
-                } else {
-                    scale = viewportWidth / baseWidth;
-                }
+                // Use the smaller scale factor to ensure the entire console fits
+                let scale = Math.min(scaleX, scaleY);
                 
-                // [NEW] Apply more padding on tall (mobile) screens to avoid UI overlap
-                if (viewportAspectRatio < 1) { // Simple check for portrait mode
-                    scale *= 0.90;
-                } else {
-                    scale *= 0.95;
-                }
+                // Apply a consistent padding factor
+                scale *= 0.95; 
                 
+                // On very large screens, don't scale up beyond its original size.
                 scale = Math.min(1, scale); 
 
                 wrapper.style.transform = `scale(${scale})`;
