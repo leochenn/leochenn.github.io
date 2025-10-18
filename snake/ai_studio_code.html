@@ -13,7 +13,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            overflow: hidden;
+            /* overflow: hidden; */ /* <<< 移除或注释掉这一行 */
             background-color: #1a242f; /* Fallback color */
             font-family: 'Courier New', monospace;
         }
@@ -162,6 +162,55 @@
             background: linear-gradient(180deg, #d64545, #b93434);
             box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
         }
+        /* 旋转提示的默认样式 (默认隐藏) */
+        #orientation-prompt {
+            display: none; /* 默认不显示 */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(26, 36, 47, 0.95);
+            color: white;
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .prompt-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            font-size: 18px;
+            font-family: 'Courier New', monospace;
+        }
+        .prompt-message svg {
+            animation: rotate-animation 2s infinite linear;
+        }
+        @keyframes rotate-animation {
+            0% { transform: rotate(0deg); }
+            50% { transform: rotate(90deg); }
+            100% { transform: rotate(90deg); }
+        }
+
+
+        /* 关键媒体查询：当屏幕为竖屏时，显示提示 */
+        @media (orientation: portrait) {
+            #orientation-prompt {
+                display: flex; /* 在竖屏时，让它显示出来 */
+            }
+            #main-wrapper {
+                display: none; /* 同时隐藏游戏本体，避免混淆 */
+            }
+        }
+
+        /* 当屏幕为横屏时，确保游戏显示 (以防万一) */
+        @media (orientation: landscape) {
+            #main-wrapper {
+                display: flex;
+            }
+        }
     </style>
 </head>
 <body>
@@ -186,7 +235,12 @@
             </div>
         </div>
     </div>
-
+    <div id="orientation-prompt">
+        <div class="prompt-message">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2m-4 0H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2m4 0V2m0 20v-2m4-16-4 4-4-4m8 16 4-4 4 4"/></svg>
+            <p>为了获得最佳体验，请将手机横置</p>
+        </div>
+    </div>
 
     <script>
     document.addEventListener('DOMContentLoaded', () => {
